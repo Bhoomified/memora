@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memora — Digital Identity Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased">
+
+    <!-- Header / Navbar -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 text-white p-2 rounded-xl text-xl font-bold">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Memora</h1>
+                    <p class="text-xs text-slate-400">Living Knowledge Graph of Your Growth</p>
+                </div>
+            </div>
+            <div class="flex space-x-2">
+                <button onclick="switchTab('upload')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 transition" id="btn-upload"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Ingestion</button>
+                <button onclick="switchTab('search')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-search"><i class="fa-solid fa-magnifying-glass mr-2"></i>Smart Retrieval</button>
+                <button onclick="switchTab('timeline')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-timeline"><i class="fa-solid fa-timeline mr-2"></i>Timeline</button>
+                <button onclick="switchTab('resume')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-resume"><i class="fa-solid fa-file-contract mr-2"></i>Resume Analyzer</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+
+        <!-- TAB 1: UPLOAD & INGESTION -->
+        <section id="tab-upload" class="tab-content space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center border-dashed border-slate-700 hover:border-indigo-500 transition">
+                <i class="fa-solid fa-file-arrow-up text-5xl text-indigo-400 mb-4"></i>
+                <h2 class="text-2xl font-bold">Ingest Academic & Professional Record</h2>
+                <p class="text-slate-400 text-sm mt-1 mb-6 max-w-md mx-auto">Drop your PDF certificates, resumes, internship letters, or project reports here to map them into your knowledge graph.</p>
+                
+                <input type="file" id="fileInput" class="hidden" onchange="handleFileUpload(event)">
+                <button onclick="document.getElementById('fileInput').click()" class="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl font-medium shadow-lg shadow-indigo-500/20 transition">
+                    Select File to Upload
+                </button>
+                <div id="uploadStatus" class="mt-4 text-sm font-medium"></div>
+            </div>
+
+            <!-- Real-time Extracted Metadata Result -->
+            <div id="extractionResult" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <div class="flex items-center space-x-2 text-emerald-400 mb-4">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <h3 class="font-semibold text-lg">AI Knowledge Extraction Completed</h3>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm" id="metadataCards"></div>
+            </div>
+        </section>
+
+        <!-- TAB 2: SMART RETRIEVAL / RAG -->
+        <section id="tab-search" class="tab-content hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <h2 class="text-lg font-bold mb-4">Ask Memora Anything About Your Growth</h2>
+                <div class="flex space-x-3">
+                    <input type="text" id="searchQuery" placeholder="e.g. 'Show all my Python projects' or 'Find AWS certifications'" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                    <button onclick="performSearch()" class="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-semibold transition">Search</button>
+                </div>
+            </div>
+            <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </section>
+
+        <!-- TAB 3: DIGITAL TIMELINE -->
+        <section id="tab-timeline" class="tab-content hidden space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-bold">Your Dynamic Growth Timeline</h2>
+                <button onclick="loadTimeline()" class="text-xs text-indigo-400 hover:underline"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
+            </div>
+            <div id="timelineContainer" class="relative border-l border-slate-800 ml-4 pl-6 space-y-8"></div>
+        </section>
+
+        <!-- TAB 4: RESUME ANALYZER -->
+        <section id="tab-resume" class="tab-content hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
+                <i class="fa-solid fa-award text-4xl text-amber-400 mb-3"></i>
+                <h2 class="text-2xl font-bold">Instant Resume Scoring</h2>
+                <p class="text-slate-400 text-sm mt-1 mb-6">Evaluate quantifiable impact, section completeness, and keyword density.</p>
+                
+                <input type="file" id="resumeFileInput" class="hidden" onchange="handleResumeUpload(event)">
+                <button onclick="document.getElementById('resumeFileInput').click()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-6 py-3 rounded-xl font-bold transition">
+                    Upload Resume PDF
+                </button>
+            </div>
+            <div id="resumeResult" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-6"></div>
+        </section>
+
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
