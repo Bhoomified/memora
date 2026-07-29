@@ -3,11 +3,13 @@ import json
 import networkx as nx
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-GRAPH_JSON_PATH = os.path.join(BASE_DIR, "data", "memory_graph.json")
+GRAPH_DIR = os.path.join(BASE_DIR, "data", "graphs")
 
 class MemoryGraph:
-    def __init__(self, storage_path=GRAPH_JSON_PATH):
-        self.storage_path = storage_path
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        os.makedirs(GRAPH_DIR, exist_ok=True)
+        self.storage_path = os.path.join(GRAPH_DIR, f"{user_id}.json")
         self.graph = nx.DiGraph()
         self.load_graph()
 

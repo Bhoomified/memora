@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -26,7 +26,18 @@ app.add_middleware(
 )
 
 # Initialize knowledge graph instance
-graph_db = MemoryGraph()
+# Per-user knowledge graph instances (cached in memory)
+graph_instances: dict[str, MemoryGraph] = {}
+
+def get_graph(user_id: str) -> MemoryGraph:
+    if user_id not in graph_instances:
+        graph_instances[user_id] = MemoryGraph(user_id=user_id)
+    return graph_instances[user_id]
+
+def get_user_id(x_user_id: str = Header(..., alias="X-User-Id")) -> str:
+    if not x_user_id or not x_user_id.strip():
+        raise HTTPException(status_code=400, detail="Missing X-User-Id header")
+    return x_user_id.strip()
 
 # Directory configuration
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,19 +53,20 @@ class ChatQuery(BaseModel):
 def read_root():
     return {"status": "online", "system": "Memora Digital Identity Engine"}
 
-
 @app.post("/api/upload")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...), user_id: str = Depends(get_user_id)):
     """
     Module 1 & 2: Ingests file, extracts text, categorizes via local LLM, 
-    stores in ChromaDB, and updates the Knowledge Graph.
+    stores in ChromaDB, and updates the Knowledge Graph. Scoped per user.
     """
     try:
         contents = await file.read()
         doc_id = f"doc_{uuid.uuid4().hex[:8]}"
-        
-        # Save raw file untouched
-        file_path = os.path.join(UPLOAD_DIR, f"{doc_id}_{file.filename}")
+
+        # Save raw file inside a per-user folder
+        user_upload_dir = os.path.join(UPLOAD_DIR, user_id)
+        os.makedirs(user_upload_dir, exist_ok=True)
+        file_path = os.path.join(user_upload_dir, f"{doc_id}_{file.filename}")
         with open(file_path, "wb") as f:
             f.write(contents)
 
@@ -68,11 +80,11 @@ async def upload_document(file: UploadFile = File(...)):
         metadata["filename"] = file.filename
         metadata["file_path"] = file_path
 
-        # Step 3: Embed in Vector Store (ChromaDB)
-        add_document_to_vector_db(doc_id, extracted_text, metadata)
+        # Step 3: Embed in Vector Store (ChromaDB) — scoped to this user
+        add_document_to_vector_db(doc_id, extracted_text, metadata, user_id)
 
-        # Step 4: Add to Knowledge Graph (NetworkX)
-        graph_db.add_document_node(doc_id, metadata)
+        # Step 4: Add to this user's Knowledge Graph (NetworkX)
+        get_graph(user_id).add_document_node(doc_id, metadata)
 
         return {
             "success": True,
@@ -84,13 +96,12 @@ async def upload_document(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
-
 @app.post("/api/search")
-async def search_identity(payload: ChatQuery):
+async def search_identity(payload: ChatQuery, user_id: str = Depends(get_user_id)):
     """
-    Module 5: Natural language semantic retrieval across digital footprint.
+    Module 5: Natural language semantic retrieval across this user's digital footprint.
     """
-    results = query_vector_db(payload.query, top_k=5)
+    results = query_vector_db(payload.query, user_id, top_k=5)
     return {
         "query": payload.query,
         "results": results
@@ -98,24 +109,19 @@ async def search_identity(payload: ChatQuery):
 
 
 @app.get("/api/timeline")
-def get_timeline():
+def get_timeline(user_id: str = Depends(get_user_id)):
     """
-    Module 4: Digital Journey Timeline sorted chronologically.
+    Module 4: Digital Journey Timeline sorted chronologically, per user.
     """
-    graph_data = graph_db.get_all_graph_data()
-    doc_nodes = [node for node in graph_data["nodes"] if node.get("type") != "Skill"]
-    
-    # Sort by date
-    sorted_timeline = sorted(doc_nodes, key=lambda x: str(x.get("date", "Unknown")), reverse=True)
-    return {"timeline": sorted_timeline}
+    graph_data = get_graph(user_id).get_all_graph_data()
 
 
 @app.get("/api/graph")
-def get_knowledge_graph():
+def get_knowledge_graph(user_id: str = Depends(get_user_id)):
     """
-    Module 3: Graph endpoints returning all nodes & dynamic edge connections.
+    Module 3: Graph endpoints returning all nodes & dynamic edge connections, per user.
     """
-    return graph_db.get_all_graph_data()
+    return get_graph(user_id).get_all_graph_data()
 
 
 @app.post("/api/resume/evaluate")

@@ -1,3 +1,12 @@
+function getUserId() {
+    let uid = localStorage.getItem('memora_user_id');
+    if (!uid) {
+        uid = 'user_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        localStorage.setItem('memora_user_id', uid);
+    }
+    return uid;
+}
+const USER_ID = getUserId();
 const API_BASE = "http://127.0.0.1:8000/api";
 
 function switchTab(tabName) {
@@ -26,7 +35,7 @@ async function handleFileUpload(event) {
     formData.append('file', file);
 
     try {
-        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
+        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'X-User-Id': USER_ID }, body: formData });
         const data = await res.json();
 
         if (data.success) {
@@ -69,10 +78,10 @@ async function performSearch() {
 
     try {
         const res = await fetch(`${API_BASE}/search`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
-        });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
+    body: JSON.stringify({ query })
+});
         const data = await res.json();
 
         container.innerHTML = '';
@@ -106,7 +115,7 @@ async function loadTimeline() {
     container.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading growth history...</p>`;
 
     try {
-        const res = await fetch(`${API_BASE}/timeline`);
+       const res = await fetch(`${API_BASE}/timeline`, { headers: { 'X-User-Id': USER_ID } });
         const data = await res.json();
 
         container.innerHTML = '';
@@ -144,8 +153,7 @@ async function handleResumeUpload(event) {
     formData.append('file', file);
 
     try {
-        const res = await fetch(`${API_BASE}/resume/evaluate`, { method: 'POST', body: formData });
-        const data = await res.json();
+        const res = await fetch(`${API_BASE}/resume/evaluate`, { method: 'POST', headers: { 'X-User-Id': USER_ID }, body: formData });
         const evalData = data.evaluation;
 
         const feedbackList = evalData.feedback.map(f => `<li class="text-xs text-slate-300">• ${f}</li>`).join('');
