@@ -1,12 +1,17 @@
 import os
 import uuid
 import shutil
-import httpx
+from dotenv import load_dotenv
+
+# Load environment variables from backend/.env
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.app.ingestion import extract_text_from_file
-from backend.app.llm_engine import classify_document, infer_relationship, generate_growth_story, OLLAMA_URL, MODEL_NAME
+from backend.app.llm_engine import classify_document, infer_relationship, generate_growth_story, chat_with_context, analyze_skill_gap
 from backend.app.vector_store import add_document_to_vector_db, query_vector_db, client as chroma_client
 from backend.app.graph_engine import MemoryGraph, GRAPH_DIR
 from backend.app.resume_eval import evaluate_resume
@@ -14,10 +19,26 @@ from backend.app.resume_eval import evaluate_resume
 app = FastAPI(
     title="Memora API",
     description="AI-powered Digital Identity & Knowledge Graph System",
-    version="2.5.0"
+    version="3.0.0"
+)
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="Memora API",
+    description="AI-powered Digital Identity & Knowledge Graph System",
+    version="3.0.0"
 )
 
-# Per-user knowledge graph instances
+# Enable CORS for all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Per-user knowledge graph instances cached in memory
 graph_instances: dict[str, MemoryGraph] = {}
 
 def get_graph(user_id: str) -> MemoryGraph:
@@ -32,6 +53,7 @@ def get_user_id(x_user_id: str = Header(..., alias="X-User-Id")) -> str:
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "uploads")
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
@@ -42,9 +64,9 @@ class GapAnalysisQuery(BaseModel):
     target_role: str
 
 
-@app.get("/")
-def read_root():
-    return {"status": "online", "system": "Memora AI Digital Identity Engine v2.5"}
+@app.get("/api/health")
+def health_check():
+    return {"status": "online", "system": "Memora AI Engine v3.0 (Groq Powered)"}
 
 
 @app.post("/api/upload")
@@ -91,84 +113,23 @@ async def upload_document(file: UploadFile = File(...), user_id: str = Depends(g
 
 @app.post("/api/chat")
 async def chat_identity_assistant(payload: ChatQuery, user_id: str = Depends(get_user_id)):
-    """Conversational RAG AI identity assistant with source citations."""
     retrieved_docs = query_vector_db(payload.query, user_id, top_k=4)
-    
     context_str = ""
     for idx, doc in enumerate(retrieved_docs):
         meta = doc.get("metadata", {})
         context_str += f"\n[Record {idx+1} - Title: {meta.get('title')} | Category: {meta.get('category')} | Date: {meta.get('date')}]:\n{doc.get('document')}\n"
-
-    prompt = f"""
-You are Memora, an intelligent AI Digital Identity Assistant representing the user's academic and professional journey.
-Answer the user's question directly based ONLY on their uploaded digital records below.
-
-User Records:
-{context_str if context_str else "No prior records uploaded matching this query."}
-
-User Question: {payload.query}
-
-Instructions:
-- Be encouraging, precise, and concise (3-5 sentences).
-- Explicitly cite the record title if available.
-"""
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.post(
-                OLLAMA_URL,
-                json={"model": MODEL_NAME, "prompt": prompt, "stream": False}
-            )
-            answer = response.json().get("response", "Could not synthesize response.").strip()
-        except Exception:
-            answer = f"Found {len(retrieved_docs)} records matching your query."
-
+    answer = await chat_with_context(payload.query, context_str)
     return {"answer": answer, "sources": retrieved_docs}
 
 
 @app.post("/api/career/gap-analysis")
-async def analyze_skill_gap(payload: GapAnalysisQuery, user_id: str = Depends(get_user_id)):
-    """Compares user's graph skills against target job role requirements."""
+async def analyze_skill_gap_endpoint(payload: GapAnalysisQuery, user_id: str = Depends(get_user_id)):
     graph = get_graph(user_id)
     user_skills = [
-        attrs.get("label") 
-        for node, attrs in graph.graph.nodes(data=True) 
+        attrs.get("label") for node, attrs in graph.graph.nodes(data=True)
         if attrs.get("type") == "Skill" or node.startswith("skill:")
     ]
-
-    prompt = f"""
-You are an expert career advisor. Analyze the user's skills against their target role.
-
-Target Role: {payload.target_role}
-User's Extracted Skills: {user_skills if user_skills else "No skills logged yet."}
-
-Tasks:
-1. Identify 3 key technical skills required for '{payload.target_role}' that are MISSING from user's skills.
-2. Provide 2 actionable recommendations to bridge the gap.
-
-Return STRICT JSON format:
-{{
-  "missing_skills": ["MissingSkill1", "MissingSkill2", "MissingSkill3"],
-  "recommendations": ["Action item 1", "Action item 2"]
-}}
-Respond ONLY with valid JSON.
-"""
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.post(
-                OLLAMA_URL,
-                json={"model": MODEL_NAME, "prompt": prompt, "stream": False}
-            )
-            raw = response.json().get("response", "{}").strip()
-            clean = raw.replace("```json", "").replace("```", "").strip()
-            import json
-            return json.loads(clean)
-        except Exception:
-            return {
-                "missing_skills": ["System Architecture", "Production MLOps", "Distributed Computing"],
-                "recommendations": ["Build a deployed open-source project.", "Complete an advanced domain certification."]
-            }
+    return await analyze_skill_gap(payload.target_role, user_skills)
 
 
 @app.get("/api/graph")
@@ -194,7 +155,6 @@ def get_timeline(user_id: str = Depends(get_user_id)):
 
 @app.delete("/api/reset")
 def reset_user_session(user_id: str = Depends(get_user_id)):
-    """Clears all session files, graph JSONs, and Chroma collection for current user."""
     global graph_instances
     try:
         user_upload_dir = os.path.join(UPLOAD_DIR, user_id)
@@ -226,3 +186,7 @@ async def evaluate_resume_endpoint(file: UploadFile = File(...), user_id: str = 
     metadata = await classify_document(text)
     score_result = evaluate_resume(text, metadata)
     return {"filename": file.filename, "evaluation": score_result}
+
+
+# MUST BE THE LAST LINE: Serve frontend static files from root URL
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

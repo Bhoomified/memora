@@ -1,3 +1,4 @@
+// --- Global Declarations (Declared ONCE) ---
 function getUserId() {
     let uid = localStorage.getItem('memora_user_id');
     if (!uid) {
@@ -7,8 +8,9 @@ function getUserId() {
     return uid;
 }
 const USER_ID = getUserId();
-const API_BASE = "http://127.0.0.1:8000/api";
+const API_BASE = "/api";
 
+// --- Tab Switcher ---
 function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -18,35 +20,42 @@ function switchTab(tabName) {
 
     document.getElementById(`tab-${tabName}`).classList.remove('hidden');
     const activeBtn = document.getElementById(`btn-${tabName}`);
-    activeBtn.classList.add('bg-indigo-600', 'text-white');
-    activeBtn.classList.remove('text-slate-300');
+    if (activeBtn) {
+        activeBtn.classList.add('bg-indigo-600', 'text-white');
+        activeBtn.classList.remove('text-slate-300');
+    }
 
     if (tabName === 'timeline') loadTimeline();
     if (tabName === 'graph') loadGraph();
 }
 
+// --- Module 1: File Upload & Ingestion ---
 async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     const statusDiv = document.getElementById('uploadStatus');
-    statusDiv.innerHTML = `<span class="text-indigo-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Processing with Local LLM (Ollama)...</span>`;
+    statusDiv.innerHTML = `<span class="text-indigo-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Extracting text & running Groq AI classification...</span>`;
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'X-User-Id': USER_ID }, body: formData });
+        const res = await fetch(`${API_BASE}/upload`, { 
+            method: 'POST', 
+            headers: { 'X-User-Id': USER_ID }, 
+            body: formData 
+        });
         const data = await res.json();
 
         if (data.success) {
-            statusDiv.innerHTML = `<span class="text-emerald-400">Successfully indexed ${file.name}!</span>`;
+            statusDiv.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1.5"></i>Successfully indexed ${file.name}! Metadata mapped into Knowledge Graph.</span>`;
             displayMetadataCard(data.metadata);
         } else {
-            statusDiv.innerHTML = `<span class="text-rose-400">Upload failed.</span>`;
+            statusDiv.innerHTML = `<span class="text-rose-400">Upload processing failed.</span>`;
         }
     } catch (err) {
-        statusDiv.innerHTML = `<span class="text-rose-400">Error connecting to backend server.</span>`;
+        statusDiv.innerHTML = `<span class="text-rose-400">Error connecting to server.</span>`;
     }
 }
 
@@ -55,132 +64,24 @@ function displayMetadataCard(meta) {
     const cardsDiv = document.getElementById('metadataCards');
     resultDiv.classList.remove('hidden');
 
-    const skills = meta.extracted_skills ? meta.extracted_skills.map(s => `<span class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded text-xs">${s}</span>`).join(' ') : 'None';
+    const skills = meta.extracted_skills && meta.extracted_skills.length > 0 
+        ? meta.extracted_skills.map(s => `<span class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded text-xs">${s}</span>`).join(' ') 
+        : '<span class="text-slate-500">None detected</span>';
 
     cardsDiv.innerHTML = `
         <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-            <span class="text-xs uppercase font-bold text-indigo-400">${meta.category}</span>
+            <span class="text-xs uppercase font-extrabold text-indigo-400 tracking-wider">${meta.category}</span>
             <h4 class="font-bold text-base mt-1 text-slate-100">${meta.title}</h4>
-            <p class="text-xs text-slate-400 mt-2">${meta.summary}</p>
+            <p class="text-xs text-slate-400 mt-2 leading-relaxed">${meta.summary}</p>
         </div>
         <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div><strong class="text-slate-400">Timestamp:</strong> ${meta.date}</div>
-            <div><strong class="text-slate-400">Extracted Skills:</strong> <div class="mt-1 flex flex-wrap gap-1">${skills}</div></div>
+            <div class="text-xs"><strong class="text-slate-400">Date:</strong> ${meta.date}</div>
+            <div class="text-xs"><strong class="text-slate-400">Extracted Skills:</strong> <div class="mt-1 flex flex-wrap gap-1">${skills}</div></div>
         </div>
     `;
 }
 
-async function performSearch() {
-    const query = document.getElementById('searchQuery').value;
-    if (!query) return;
-
-    const container = document.getElementById('searchResults');
-    container.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Searching ChromaDB embeddings...</p>`;
-
-    try {
-        const res = await fetch(`${API_BASE}/search`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
-    body: JSON.stringify({ query })
-});
-        const data = await res.json();
-
-        container.innerHTML = '';
-        if (data.results.length === 0) {
-            container.innerHTML = `<p class="text-slate-400 text-sm">No documents found matching query.</p>`;
-            return;
-        }
-
-        data.results.forEach(r => {
-            container.innerHTML += `
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-indigo-500/50 transition">
-                    <div class="flex justify-between items-start">
-                        <span class="bg-indigo-950 text-indigo-400 text-xs px-2.5 py-1 rounded-full font-semibold">${r.metadata.category}</span>
-                        <span class="text-xs text-slate-500">${r.metadata.date}</span>
-                    </div>
-                    <h3 class="font-bold text-base mt-3 text-slate-200">${r.metadata.title}</h3>
-                    <p class="text-xs text-slate-400 mt-2">${r.metadata.summary}</p>
-                    <div class="mt-4 pt-3 border-t border-slate-800 flex justify-between text-xs text-slate-400">
-                        <span>Skills: ${r.metadata.skills}</span>
-                    </div>
-                </div>
-            `;
-        });
-    } catch (err) {
-        container.innerHTML = `<p class="text-rose-400 text-sm">Search failed.</p>`;
-    }
-}
-
-async function loadTimeline() {
-    const container = document.getElementById('timelineContainer');
-    container.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading growth history...</p>`;
-
-    fetch(`${API_BASE}/graph/story`, { headers: { 'X-User-Id': USER_ID } })
-        .then(r => r.json())
-        .then(d => {
-            const storyDiv = document.getElementById('growthStory');
-            if (storyDiv) storyDiv.innerHTML = `<p class="text-sm text-slate-300 leading-relaxed">${d.story}</p>`;
-        });
-
-    try {
-        const res = await fetch(`${API_BASE}/timeline`, { headers: { 'X-User-Id': USER_ID } });
-        const data = await res.json();
-
-        container.innerHTML = '';
-
-        data.timeline.forEach(item => {
-            container.innerHTML += `
-                <div class="relative">
-                    <div class="absolute -left-[31px] top-1.5 bg-indigo-600 w-3 h-3 rounded-full ring-4 ring-slate-950"></div>
-                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                        <span class="text-xs font-bold text-indigo-400">${item.date || 'Undated'}</span>
-                        <h4 class="font-bold text-base text-slate-200 mt-0.5">${item.label}</h4>
-                        <p class="text-xs text-slate-400 mt-1">${item.summary || ''}</p>
-                    </div>
-                </div>
-            `;
-        });
-    } catch (err) {
-        container.innerHTML = `<p class="text-rose-400 text-sm">Failed to load timeline.</p>`;
-    }
-}
-
-async function handleResumeUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const resultDiv = document.getElementById('resumeResult');
-    resultDiv.classList.remove('hidden');
-    resultDiv.innerHTML = `<p class="text-slate-400 text-sm text-center"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Analyzing resume metrics...</p>`;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-        const res = await fetch(`${API_BASE}/resume/evaluate`, { method: 'POST', headers: { 'X-User-Id': USER_ID }, body: formData });
-        const evalData = data.evaluation;
-
-        const feedbackList = evalData.feedback.map(f => `<li class="text-xs text-slate-300">• ${f}</li>`).join('');
-
-        resultDiv.innerHTML = `
-            <div class="flex items-center justify-between pb-6 border-b border-slate-800">
-                <div>
-                    <h3 class="text-lg font-bold">${data.filename}</h3>
-                    <p class="text-xs text-slate-400">Automated System Score</p>
-                </div>
-                <div class="text-4xl font-extrabold text-amber-400 bg-amber-950/50 border border-amber-800 px-4 py-2 rounded-2xl">
-                    ${evalData.score}<span class="text-sm text-amber-500 font-normal">/100</span>
-                </div>
-            </div>
-            <div class="mt-6 space-y-4">
-                <h4 class="font-semibold text-sm text-slate-200">System Feedback & Recommendations:</h4>
-                <ul class="space-y-2">${feedbackList}</ul>
-            </div>
-        `;
-    } catch (err) {
-        resultDiv.innerHTML = `<p class="text-rose-400 text-sm">Resume analysis failed.</p>`;
-    }
-}
+// --- D3.js Knowledge Graph Renderer ---
 function loadGraph() {
     const svg = d3.select('#graphSvg');
     svg.selectAll('*').remove();
@@ -211,20 +112,15 @@ function renderGraph(data, svg, width, height) {
         .call(d3.zoom().scaleExtent([0.3, 3]).on('zoom', (e) => g.attr('transform', e.transform)))
         .append('g');
 
-    // 1. Add Arrow Marker Definitions
+    // Arrowhead Definition
     svg.append('defs').append('marker')
         .attr('id', 'arrow-causal')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 22)
-        .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
+        .attr('refX', 22).attr('refY', 0)
+        .attr('markerWidth', 6).attr('markerHeight', 6)
         .attr('orient', 'auto')
-        .append('path')
-        .attr('fill', '#fbbf24')
-        .attr('d', 'M0,-5L10,0L0,5');
+        .append('path').attr('fill', '#fbbf24').attr('d', 'M0,-5L10,0L0,5');
 
-    // 2. Render Relationship Links with Arrowhead End Markers
     const linkSel = g.append('g').selectAll('line').data(links).join('line')
         .attr('stroke', d => causalTypes.includes(d.relationship) ? '#fbbf24' : '#475569')
         .attr('stroke-width', d => causalTypes.includes(d.relationship) ? 2.5 : 1)
@@ -279,45 +175,19 @@ function showTooltip(event, d) {
         : `<strong class="text-indigo-400">${d.label}</strong><br><span class="text-slate-400">${d.type || ''} · ${d.date || ''}</span><br><span class="text-slate-300">${d.summary || ''}</span>`;
     moveTooltip(event);
 }
+
 function moveTooltip(event) {
     const tip = document.getElementById('graphTooltip');
     const rect = document.getElementById('graphSvg').parentElement.getBoundingClientRect();
     tip.style.left = (event.clientX - rect.left + 15) + 'px';
     tip.style.top = (event.clientY - rect.top + 15) + 'px';
 }
+
 function hideTooltip() {
     document.getElementById('graphTooltip').classList.add('hidden');
 }
-// Ensure user identification function is at the top
-function getUserId() {
-    let uid = localStorage.getItem('memora_user_id');
-    if (!uid) {
-        uid = 'user_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-        localStorage.setItem('memora_user_id', uid);
-    }
-    return uid;
-}
-const USER_ID = getUserId();
-const API_BASE = "http://127.0.0.1:8000/api";
 
-function switchTab(tabName) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('bg-indigo-600', 'text-white');
-        btn.classList.add('text-slate-300');
-    });
-
-    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
-    const activeBtn = document.getElementById(`btn-${tabName}`);
-    if (activeBtn) {
-        activeBtn.classList.add('bg-indigo-600', 'text-white');
-        activeBtn.classList.remove('text-slate-300');
-    }
-
-    if (tabName === 'timeline') loadTimeline();
-    if (tabName === 'graph') loadGraph();
-}
-
+// --- AI Chat Assistant ---
 async function sendChatMessage() {
     const inputEl = document.getElementById('chatInput');
     const query = inputEl.value.trim();
@@ -349,6 +219,7 @@ async function sendChatMessage() {
     }
 }
 
+// --- Skill Gap Analyzer ---
 async function runGapAnalysis() {
     const roleInput = document.getElementById('targetRoleInput').value.trim();
     if (!roleInput) return;
@@ -386,11 +257,97 @@ async function runGapAnalysis() {
     }
 }
 
+// --- Timeline & Narrative ---
+async function loadTimeline() {
+    const container = document.getElementById('timelineContainer');
+    container.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading growth history...</p>`;
+
+    fetch(`${API_BASE}/graph/story`, { headers: { 'X-User-Id': USER_ID } })
+        .then(r => r.json())
+        .then(d => {
+            const storyDiv = document.getElementById('growthStory');
+            if (storyDiv) storyDiv.innerHTML = `<p class="text-sm text-slate-300 leading-relaxed">${d.story}</p>`;
+        });
+
+    try {
+        const res = await fetch(`${API_BASE}/timeline`, { headers: { 'X-User-Id': USER_ID } });
+        const data = await res.json();
+
+        container.innerHTML = '';
+        if (!data.timeline || data.timeline.length === 0) {
+            container.innerHTML = `<p class="text-slate-400 text-sm">No items in digital timeline yet. Upload some files first!</p>`;
+            return;
+        }
+
+        data.timeline.forEach(item => {
+            container.innerHTML += `
+                <div class="relative">
+                    <div class="absolute -left-[31px] top-1.5 bg-indigo-500 w-3 h-3 rounded-full ring-4 ring-slate-950"></div>
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                        <span class="text-xs font-bold text-indigo-400">${item.date || 'Undated'}</span>
+                        <h4 class="font-bold text-base text-slate-100 mt-0.5">${item.label}</h4>
+                        <p class="text-xs text-slate-400 mt-1">${item.summary || ''}</p>
+                    </div>
+                </div>
+            `;
+        });
+    } catch (err) {
+        container.innerHTML = `<p class="text-rose-400 text-sm">Failed to load timeline.</p>`;
+    }
+}
+
+// --- Resume Analyzer ---
+async function handleResumeUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const resultDiv = document.getElementById('resumeResult');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `<p class="text-slate-400 text-sm text-center"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Analyzing resume metrics...</p>`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch(`${API_BASE}/resume/evaluate`, { 
+            method: 'POST', 
+            headers: { 'X-User-Id': USER_ID },
+            body: formData 
+        });
+        const data = await res.json();
+        const evalData = data.evaluation;
+
+        const feedbackList = evalData.feedback.map(f => `<li class="text-xs text-slate-300">• ${f}</li>`).join('');
+
+        resultDiv.innerHTML = `
+            <div class="flex items-center justify-between pb-6 border-b border-slate-800">
+                <div>
+                    <h3 class="text-lg font-bold">${data.filename}</h3>
+                    <p class="text-xs text-slate-400">Automated System Score</p>
+                </div>
+                <div class="text-4xl font-extrabold text-amber-400 bg-amber-950/50 border border-amber-800 px-4 py-2 rounded-2xl">
+                    ${evalData.score}<span class="text-sm text-amber-500 font-normal">/100</span>
+                </div>
+            </div>
+            <div class="mt-6 space-y-4">
+                <h4 class="font-semibold text-sm text-slate-200">System Feedback & Recommendations:</h4>
+                <ul class="space-y-2">${feedbackList}</ul>
+            </div>
+        `;
+    } catch (err) {
+        resultDiv.innerHTML = `<p class="text-rose-400 text-sm">Resume analysis failed.</p>`;
+    }
+}
+
+// --- Session Reset ---
 async function resetSession() {
     if (!confirm("Are you sure you want to clear your uploaded data and reset your session?")) return;
 
     try {
-        const res = await fetch(`${API_BASE}/reset`, { method: 'DELETE', headers: { 'X-User-Id': USER_ID } });
+        const res = await fetch(`${API_BASE}/reset`, { 
+            method: 'DELETE', 
+            headers: { 'X-User-Id': USER_ID } 
+        });
         const data = await res.json();
         alert(data.message);
         location.reload();

@@ -1,11 +1,32 @@
-import httpx
+import os
 import json
+import httpx
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3.2:3b"
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.1-8b-instant"  # fast + free-tier friendly
+
+def _get_api_key() -> str:
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY environment variable is not set.")
+    return key
+
+async def call_llm(prompt: str) -> str:
+    """Generic call to Groq's OpenAI-compatible chat completions endpoint."""
+    headers = {"Authorization": f"Bearer {_get_api_key()}", "Content-Type": "application/json"}
+    body = {
+        "model": GROQ_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(GROQ_URL, headers=headers, json=body)
+        data = response.json()
+        return data["choices"][0]["message"]["content"].strip()
+
 
 SYSTEM_PROMPT = """
-You are an expert AI Data Identity System named Memora. 
+You are an expert AI Data Identity System named Memora.
 Analyze the document text provided and extract metadata into a strict JSON object.
 
 Output JSON format strictly:
@@ -25,49 +46,25 @@ Rules:
 """
 
 async def classify_document(text: str) -> dict:
-    """
-    Passes extracted document text to the local Ollama LLM 
-    and returns parsed JSON metadata.
-    """
     if not text.strip():
         return {
-            "title": "Empty Document",
-            "category": "Academics",
-            "date": "Unknown",
-            "extracted_skills": [],
-            "summary": "No text could be extracted from this document.",
+            "title": "Empty Document", "category": "Academics", "date": "Unknown",
+            "extracted_skills": [], "summary": "No text could be extracted from this document.",
             "related_entities": []
         }
-
     prompt = f"{SYSTEM_PROMPT}\n\nDocument Text Content:\n{text[:2500]}"
-    
-    async with httpx.AsyncClient(timeout=40.0) as client:
-        try:
-            response = await client.post(
-                OLLAMA_URL,
-                json={
-                    "model": MODEL_NAME,
-                    "prompt": prompt,
-                    "stream": False
-                }
-            )
-            res_data = response.json()
-            raw_output = res_data.get("response", "{}").strip()
-            
-            # Sanitize markdown formatting if Ollama accidentally adds backticks
-            clean_json = raw_output.replace("```json", "").replace("```", "").strip()
-            return json.loads(clean_json)
-            
-        except (json.JSONDecodeError, Exception) as e:
-            print(f"LLM Classification Warning/Error: {str(e)}")
-            return {
-                "title": "Processed Document",
-                "category": "Academics",
-                "date": "Unknown",
-                "extracted_skills": [],
-                "summary": text[:200],
-                "related_entities": []
-            }
+    try:
+        raw = await call_llm(prompt)
+        clean = raw.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean)
+    except Exception as e:
+        print(f"LLM Classification Warning/Error: {str(e)}")
+        return {
+            "title": "Processed Document", "category": "Academics", "date": "Unknown",
+            "extracted_skills": [], "summary": text[:200], "related_entities": []
+        }
+
+
 RELATIONSHIP_PROMPT = """
 You are analyzing two entries in someone's personal knowledge graph to detect a causal or developmental relationship between them.
 
@@ -75,33 +72,30 @@ Entry A (earlier): "{a_title}" ({a_type}) - {a_summary}
 Entry B (newer): "{b_title}" ({b_type}) - {b_summary}
 
 Does Entry A meaningfully connect to Entry B? Answer with ONLY one word from this list:
-LED_TO   (A directly enabled or caused B)
-BUILT_ON (B is a continuation or deeper application of A)
-APPLIED_IN (skills/knowledge from A were applied practically in B)
-NONE     (no meaningful causal connection)
+LED_TO
+BUILT_ON
+APPLIED_IN
+NONE
 
 Answer with exactly one word, nothing else.
 """
 
 async def infer_relationship(new_doc: dict, existing_doc: dict) -> str:
-    """Asks the local LLM if existing_doc causally leads to new_doc. Returns LED_TO/BUILT_ON/APPLIED_IN/NONE."""
     prompt = RELATIONSHIP_PROMPT.format(
         a_title=existing_doc.get("title", ""), a_type=existing_doc.get("type", ""),
         a_summary=existing_doc.get("summary", ""),
         b_title=new_doc.get("title", ""), b_type=new_doc.get("category", ""),
         b_summary=new_doc.get("summary", "")
     )
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        try:
-            response = await client.post(OLLAMA_URL, json={"model": MODEL_NAME, "prompt": prompt, "stream": False})
-            raw = response.json().get("response", "NONE").strip().upper()
-            for valid in ["LED_TO", "BUILT_ON", "APPLIED_IN", "NONE"]:
-                if valid in raw:
-                    return valid
-            return "NONE"
-        except Exception as e:
-            print(f"Relationship inference warning: {e}")
-            return "NONE"
+    try:
+        raw = (await call_llm(prompt)).strip().upper()
+        for valid in ["LED_TO", "BUILT_ON", "APPLIED_IN", "NONE"]:
+            if valid in raw:
+                return valid
+        return "NONE"
+    except Exception as e:
+        print(f"Relationship inference warning: {e}")
+        return "NONE"
 
 
 STORY_PROMPT = """
@@ -121,10 +115,57 @@ async def generate_growth_story(documents: list) -> str:
         for d in documents
     )
     prompt = STORY_PROMPT.format(timeline=timeline_text[:3000])
-    async with httpx.AsyncClient(timeout=40.0) as client:
-        try:
-            response = await client.post(OLLAMA_URL, json={"model": MODEL_NAME, "prompt": prompt, "stream": False})
-            return response.json().get("response", "").strip()
-        except Exception as e:
-            print(f"Story generation warning: {e}")
-            return "Your growth story couldn't be generated right now — try again shortly."
+    try:
+        return await call_llm(prompt)
+    except Exception as e:
+        print(f"Story generation warning: {e}")
+        return "Your growth story couldn't be generated right now — try again shortly."
+
+
+async def chat_with_context(query: str, context_str: str) -> str:
+    prompt = f"""
+You are Memora, an intelligent AI Digital Identity Assistant representing the user's academic and professional journey.
+Answer the user's question directly based ONLY on their uploaded digital records below.
+
+User Records:
+{context_str if context_str else "No prior records uploaded matching this query."}
+
+User Question: {query}
+
+Instructions:
+- Be encouraging, precise, and concise (3-5 sentences).
+- Explicitly cite the record title if available.
+"""
+    try:
+        return await call_llm(prompt)
+    except Exception:
+        return "Could not synthesize response right now."
+
+
+async def analyze_skill_gap(target_role: str, user_skills: list) -> dict:
+    prompt = f"""
+You are an expert career advisor. Analyze the user's skills against their target role.
+
+Target Role: {target_role}
+User's Extracted Skills: {user_skills if user_skills else "No skills logged yet."}
+
+Tasks:
+1. Identify 3 key technical skills required for '{target_role}' that are MISSING from user's skills.
+2. Provide 2 actionable recommendations to bridge the gap.
+
+Return STRICT JSON format:
+{{
+  "missing_skills": ["MissingSkill1", "MissingSkill2", "MissingSkill3"],
+  "recommendations": ["Action item 1", "Action item 2"]
+}}
+Respond ONLY with valid JSON.
+"""
+    try:
+        raw = await call_llm(prompt)
+        clean = raw.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean)
+    except Exception:
+        return {
+            "missing_skills": ["System Architecture", "Production MLOps", "Distributed Computing"],
+            "recommendations": ["Build a deployed open-source project.", "Complete an advanced domain certification."]
+        }

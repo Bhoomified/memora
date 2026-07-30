@@ -17,3 +17,6 @@ data/memory_graph.json
 .DS_Store
 .vscode/
 .idea/
+
+backend/.env
+.env
