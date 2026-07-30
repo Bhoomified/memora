@@ -114,15 +114,18 @@ async function loadTimeline() {
     const container = document.getElementById('timelineContainer');
     container.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading growth history...</p>`;
 
+    fetch(`${API_BASE}/graph/story`, { headers: { 'X-User-Id': USER_ID } })
+        .then(r => r.json())
+        .then(d => {
+            const storyDiv = document.getElementById('growthStory');
+            if (storyDiv) storyDiv.innerHTML = `<p class="text-sm text-slate-300 leading-relaxed">${d.story}</p>`;
+        });
+
     try {
-       const res = await fetch(`${API_BASE}/timeline`, { headers: { 'X-User-Id': USER_ID } });
+        const res = await fetch(`${API_BASE}/timeline`, { headers: { 'X-User-Id': USER_ID } });
         const data = await res.json();
 
         container.innerHTML = '';
-        if (!data.timeline || data.timeline.length === 0) {
-            container.innerHTML = `<p class="text-slate-400 text-sm">No items in digital timeline yet. Upload some files first!</p>`;
-            return;
-        }
 
         data.timeline.forEach(item => {
             container.innerHTML += `

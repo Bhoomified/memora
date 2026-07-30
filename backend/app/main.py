@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.app.ingestion import extract_text_from_file
-from backend.app.llm_engine import classify_document
+from backend.app.llm_engine import classify_document, infer_relationship, generate_growth_story
 from backend.app.vector_store import add_document_to_vector_db, query_vector_db
 from backend.app.graph_engine import MemoryGraph
 from backend.app.resume_eval import evaluate_resume
@@ -84,7 +84,17 @@ async def upload_document(file: UploadFile = File(...), user_id: str = Depends(g
         add_document_to_vector_db(doc_id, extracted_text, metadata, user_id)
 
         # Step 4: Add to this user's Knowledge Graph (NetworkX)
-        get_graph(user_id).add_document_node(doc_id, metadata)
+        # Step 4: Add to this user's Knowledge Graph + auto-link docs sharing skills
+        graph = get_graph(user_id)
+        related_doc_ids = graph.add_document_node(doc_id, metadata)
+
+        # Step 5: Ask local LLM to infer causal relationships (capped to top 4 related docs)
+        for other_id in related_doc_ids[:4]:
+            other_doc = graph.get_document(other_id)
+            if other_doc:
+                relation = await infer_relationship(metadata, other_doc)
+                if relation != "NONE":
+                    graph.add_causal_edge(other_id, doc_id, relation)
 
         return {
             "success": True,
@@ -138,3 +148,12 @@ async def evaluate_resume_endpoint(file: UploadFile = File(...)):
         "filename": file.filename,
         "evaluation": score_result
     }
+@app.get("/api/graph/story")
+async def get_growth_story(user_id: str = Depends(get_user_id)):
+    """
+    Generates an LLM narrative describing how the user's documents connect and build on each other.
+    """
+    graph = get_graph(user_id)
+    documents = graph.get_documents_summary()
+    story = await generate_growth_story(documents)
+    return {"story": story}
