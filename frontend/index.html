@@ -14,7 +14,7 @@
     <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <div class="flex items-center space-x-3">
-                <div class="bg-indigo-600 text-white p-2 rounded-xl text-xl font-bold">
+                <div class="bg-indigo-600 text-white p-2 rounded-xl text-xl font-bold shadow-lg shadow-indigo-500/20">
                     <i class="fa-solid fa-brain"></i>
                 </div>
                 <div>
@@ -22,12 +22,19 @@
                     <p class="text-xs text-slate-400">Living Knowledge Graph of Your Growth</p>
                 </div>
             </div>
-            <div class="flex space-x-2">
-                <button onclick="switchTab('upload')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 transition" id="btn-upload"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Ingestion</button>
-                <button onclick="switchTab('search')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-search"><i class="fa-solid fa-magnifying-glass mr-2"></i>Smart Retrieval</button>
-                <button onclick="switchTab('timeline')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-timeline"><i class="fa-solid fa-timeline mr-2"></i>Timeline</button>
-                <button onclick="switchTab('resume')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-resume"><i class="fa-solid fa-file-contract mr-2"></i>Resume Analyzer</button>
-                <button onclick="switchTab('graph')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-graph"><i class="fa-solid fa-diagram-project mr-2"></i>Knowledge Graph</button>
+            
+            <div class="flex items-center space-x-2">
+                <button onclick="switchTab('upload')" class="tab-btn px-3 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition" id="btn-upload"><i class="fa-solid fa-cloud-arrow-up mr-1.5"></i>Ingestion</button>
+                <button onclick="switchTab('graph')" class="tab-btn px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-graph"><i class="fa-solid fa-diagram-project mr-1.5"></i>Graph</button>
+                <button onclick="switchTab('chat')" class="tab-btn px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-chat"><i class="fa-solid fa-robot mr-1.5"></i>AI Assistant</button>
+                <button onclick="switchTab('gap')" class="tab-btn px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-gap"><i class="fa-solid fa-compass mr-1.5"></i>Skill Gap</button>
+                <button onclick="switchTab('timeline')" class="tab-btn px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-timeline"><i class="fa-solid fa-timeline mr-1.5"></i>Timeline</button>
+                <button onclick="switchTab('resume')" class="tab-btn px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-resume"><i class="fa-solid fa-file-contract mr-1.5"></i>Resume Analyzer</button>
+                
+                <!-- Reset Button -->
+                <button onclick="resetSession()" class="ml-2 text-xs px-3 py-2 bg-rose-950/50 text-rose-300 border border-rose-800/60 hover:bg-rose-900 rounded-lg transition">
+                    <i class="fa-solid fa-rotate-left mr-1"></i>Reset
+                </button>
             </div>
         </div>
     </header>
@@ -48,7 +55,6 @@
                 <div id="uploadStatus" class="mt-4 text-sm font-medium"></div>
             </div>
 
-            <!-- Real-time Extracted Metadata Result -->
             <div id="extractionResult" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-6">
                 <div class="flex items-center space-x-2 text-emerald-400 mb-4">
                     <i class="fa-solid fa-circle-check"></i>
@@ -58,32 +64,70 @@
             </div>
         </section>
 
-        <!-- TAB 2: SMART RETRIEVAL / RAG -->
-        <section id="tab-search" class="tab-content hidden space-y-6">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-                <h2 class="text-lg font-bold mb-4">Ask Memora Anything About Your Growth</h2>
-                <div class="flex space-x-3">
-                    <input type="text" id="searchQuery" placeholder="e.g. 'Show all my Python projects' or 'Find AWS certifications'" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
-                    <button onclick="performSearch()" class="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-semibold transition">Search</button>
+        <!-- TAB 2: KNOWLEDGE GRAPH -->
+        <section id="tab-graph" class="tab-content hidden space-y-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-xl font-bold">Your Living Knowledge Graph</h2>
+                    <p class="text-xs text-slate-400 mt-1">Documents, skills, and how they connect &amp; build on each other.</p>
                 </div>
+                <button onclick="loadGraph()" class="text-xs text-indigo-400 hover:underline"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
             </div>
-            <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            <div class="flex flex-wrap gap-4 text-xs text-slate-400">
+                <span><span class="inline-block w-3 h-3 rounded-full bg-indigo-500 mr-1"></span>Document</span>
+                <span><span class="inline-block w-3 h-3 rounded-full bg-cyan-400 mr-1"></span>Skill</span>
+                <span><span class="inline-block w-6 h-0.5 bg-slate-600 mr-1 align-middle"></span>Shares Skill</span>
+                <span><span class="inline-block w-6 h-0.5 bg-amber-400 mr-1 align-middle"></span>Causal Link (LED_TO / BUILT_ON)</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden" style="height: 560px;">
+                <svg id="graphSvg" width="100%" height="100%"></svg>
+                <div id="graphTooltip" class="hidden absolute bg-slate-950 border border-indigo-700 rounded-xl px-4 py-3 text-xs max-w-xs pointer-events-none z-10 shadow-xl"></div>
+            </div>
         </section>
 
-        <!-- TAB 3: DIGITAL TIMELINE -->
+        <!-- TAB 3: CONVERSATIONAL AI IDENTITY ASSISTANT -->
+        <section id="tab-chat" class="tab-content hidden space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col h-[560px]">
+                <h2 class="font-bold text-lg border-b border-slate-800 pb-3 mb-4"><i class="fa-solid fa-robot text-cyan-400 mr-2"></i>Ask Memora AI Assistant</h2>
+                <div id="chatBox" class="flex-1 overflow-y-auto space-y-4 text-sm pr-2">
+                    <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-slate-300 max-w-lg">
+                        Hi! I am **Memora**. Ask me questions like *"Summarize my machine learning experience"* or *"What AWS certs do I have?"*
+                    </div>
+                </div>
+                <div class="pt-4 border-t border-slate-800 flex space-x-2">
+                    <input type="text" id="chatInput" onkeydown="if(event.key==='Enter') sendChatMessage()" placeholder="Ask Memora anything about your growth..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                    <button onclick="sendChatMessage()" class="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-semibold transition">Send</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: CAREER SKILL GAP ANALYZER -->
+        <section id="tab-gap" class="tab-content hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <h2 class="text-lg font-bold mb-2">Target Role Skill Gap Analyzer</h2>
+                <p class="text-xs text-slate-400 mb-4">Select or type a target role to compare against your extracted skill graph nodes.</p>
+                <div class="flex space-x-3">
+                    <input type="text" id="targetRoleInput" placeholder="e.g. AI Research Engineer, Cloud Architect, Full Stack Developer" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                    <button onclick="runGapAnalysis()" class="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-semibold transition">Analyze</button>
+                </div>
+            </div>
+            <div id="gapResult" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-6"></div>
+        </section>
+
+        <!-- TAB 5: DIGITAL TIMELINE -->
         <section id="tab-timeline" class="tab-content hidden space-y-6">
             <div class="flex justify-between items-center">
                 <h2 class="text-xl font-bold">Your Dynamic Growth Timeline</h2>
                 <button onclick="loadTimeline()" class="text-xs text-indigo-400 hover:underline"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
             </div>
-        <div id="growthStory" class="bg-indigo-950/30 border border-indigo-800/50 rounded-2xl p-5 mb-6">
-    <span class="text-xs uppercase font-bold text-indigo-400">Your Growth Story</span>
-    <p class="text-sm text-slate-400 mt-2">Loading...</p>
-</div>
+            <div id="growthStory" class="bg-indigo-950/30 border border-indigo-800/50 rounded-2xl p-5 mb-6">
+                <span class="text-xs uppercase font-bold text-indigo-400">Your Growth Story</span>
+                <p class="text-sm text-slate-400 mt-2">Loading...</p>
+            </div>
             <div id="timelineContainer" class="relative border-l border-slate-800 ml-4 pl-6 space-y-8"></div>
         </section>
 
-        <!-- TAB 4: RESUME ANALYZER -->
+        <!-- TAB 6: RESUME ANALYZER -->
         <section id="tab-resume" class="tab-content hidden space-y-6">
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
                 <i class="fa-solid fa-award text-4xl text-amber-400 mb-3"></i>
@@ -99,26 +143,6 @@
         </section>
 
     </main>
-    <!-- TAB 5: KNOWLEDGE GRAPH -->
-<section id="tab-graph" class="tab-content hidden space-y-4">
-    <div class="flex justify-between items-center">
-        <div>
-            <h2 class="text-xl font-bold">Your Living Knowledge Graph</h2>
-            <p class="text-xs text-slate-400 mt-1">Documents, skills, and how they connect &amp; build on each other.</p>
-        </div>
-        <button onclick="loadGraph()" class="text-xs text-indigo-400 hover:underline"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
-    </div>
-    <div class="flex flex-wrap gap-4 text-xs text-slate-400">
-        <span><span class="inline-block w-3 h-3 rounded-full bg-indigo-500 mr-1"></span>Document</span>
-        <span><span class="inline-block w-3 h-3 rounded-full bg-cyan-400 mr-1"></span>Skill</span>
-        <span><span class="inline-block w-6 h-0.5 bg-slate-600 mr-1 align-middle"></span>Shares Skill</span>
-        <span><span class="inline-block w-6 h-0.5 bg-amber-400 mr-1 align-middle"></span>Led To / Built On / Applied In</span>
-    </div>
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden" style="height: 600px;">
-        <svg id="graphSvg" width="100%" height="100%"></svg>
-        <div id="graphTooltip" class="hidden absolute bg-slate-950 border border-indigo-700 rounded-xl px-4 py-3 text-xs max-w-xs pointer-events-none z-10 shadow-xl"></div>
-    </div>
-</section>
 
     <script src="app.js"></script>
 </body>

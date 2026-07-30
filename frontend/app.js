@@ -288,3 +288,113 @@ function moveTooltip(event) {
 function hideTooltip() {
     document.getElementById('graphTooltip').classList.add('hidden');
 }
+// Ensure user identification function is at the top
+function getUserId() {
+    let uid = localStorage.getItem('memora_user_id');
+    if (!uid) {
+        uid = 'user_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        localStorage.setItem('memora_user_id', uid);
+    }
+    return uid;
+}
+const USER_ID = getUserId();
+const API_BASE = "http://127.0.0.1:8000/api";
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white');
+        btn.classList.add('text-slate-300');
+    });
+
+    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    const activeBtn = document.getElementById(`btn-${tabName}`);
+    if (activeBtn) {
+        activeBtn.classList.add('bg-indigo-600', 'text-white');
+        activeBtn.classList.remove('text-slate-300');
+    }
+
+    if (tabName === 'timeline') loadTimeline();
+    if (tabName === 'graph') loadGraph();
+}
+
+async function sendChatMessage() {
+    const inputEl = document.getElementById('chatInput');
+    const query = inputEl.value.trim();
+    if (!query) return;
+
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML += `<div class="flex justify-end"><div class="bg-indigo-600 text-white rounded-xl px-4 py-2.5 max-w-md text-sm">${query}</div></div>`;
+    inputEl.value = '';
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    const loadingId = `load_${Date.now()}`;
+    chatBox.innerHTML += `<div id="${loadingId}" class="flex justify-start"><div class="bg-slate-950 border border-slate-800 text-slate-400 rounded-xl p-3 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Synthesizing from digital records...</div></div>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    try {
+        const res = await fetch(`${API_BASE}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
+            body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        document.getElementById(loadingId).remove();
+
+        chatBox.innerHTML += `<div class="flex justify-start"><div class="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl p-4 max-w-xl text-sm leading-relaxed">${data.answer}</div></div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+    } catch (err) {
+        document.getElementById(loadingId).remove();
+        chatBox.innerHTML += `<div class="text-rose-400 text-xs">Chat request failed.</div>`;
+    }
+}
+
+async function runGapAnalysis() {
+    const roleInput = document.getElementById('targetRoleInput').value.trim();
+    if (!roleInput) return;
+
+    const resultDiv = document.getElementById('gapResult');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Comparing Knowledge Graph against ${roleInput} requirements...</p>`;
+
+    try {
+        const res = await fetch(`${API_BASE}/career/gap-analysis`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
+            body: JSON.stringify({ target_role: roleInput })
+        });
+        const data = await res.json();
+
+        const missing = (data.missing_skills || []).map(s => `<span class="bg-rose-950/80 text-rose-300 border border-rose-800 px-2.5 py-1 rounded-md text-xs font-semibold">${s}</span>`).join(' ');
+        const recs = (data.recommendations || []).map(r => `<li class="text-xs text-slate-300">• ${r}</li>`).join('');
+
+        resultDiv.innerHTML = `
+            <h3 class="font-bold text-base text-slate-100 mb-3">Gap Analysis for: <span class="text-indigo-400">${roleInput}</span></h3>
+            <div class="space-y-4">
+                <div>
+                    <strong class="text-xs text-slate-400 uppercase tracking-wider">Identified Missing Skills:</strong>
+                    <div class="mt-2 flex flex-wrap gap-2">${missing}</div>
+                </div>
+                <div>
+                    <strong class="text-xs text-slate-400 uppercase tracking-wider">Actionable Recommendations:</strong>
+                    <ul class="mt-2 space-y-1.5">${recs}</ul>
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        resultDiv.innerHTML = `<p class="text-rose-400 text-sm">Skill gap analysis failed.</p>`;
+    }
+}
+
+async function resetSession() {
+    if (!confirm("Are you sure you want to clear your uploaded data and reset your session?")) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/reset`, { method: 'DELETE', headers: { 'X-User-Id': USER_ID } });
+        const data = await res.json();
+        alert(data.message);
+        location.reload();
+    } catch (err) {
+        alert("Reset failed.");
+    }
+}
