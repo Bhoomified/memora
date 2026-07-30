@@ -7,6 +7,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# RAM Optimizations for 512MB free tier limits
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+
+# Install CPU-only PyTorch first (slams memory usage from ~450MB down to ~120MB)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 # Install Python packages
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
