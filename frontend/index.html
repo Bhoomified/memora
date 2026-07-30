@@ -6,6 +6,7 @@
     <title>Memora — Digital Identity Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased">
 
@@ -26,6 +27,7 @@
                 <button onclick="switchTab('search')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-search"><i class="fa-solid fa-magnifying-glass mr-2"></i>Smart Retrieval</button>
                 <button onclick="switchTab('timeline')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-timeline"><i class="fa-solid fa-timeline mr-2"></i>Timeline</button>
                 <button onclick="switchTab('resume')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-resume"><i class="fa-solid fa-file-contract mr-2"></i>Resume Analyzer</button>
+                <button onclick="switchTab('graph')" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" id="btn-graph"><i class="fa-solid fa-diagram-project mr-2"></i>Knowledge Graph</button>
             </div>
         </div>
     </header>
@@ -97,6 +99,26 @@
         </section>
 
     </main>
+    <!-- TAB 5: KNOWLEDGE GRAPH -->
+<section id="tab-graph" class="tab-content hidden space-y-4">
+    <div class="flex justify-between items-center">
+        <div>
+            <h2 class="text-xl font-bold">Your Living Knowledge Graph</h2>
+            <p class="text-xs text-slate-400 mt-1">Documents, skills, and how they connect &amp; build on each other.</p>
+        </div>
+        <button onclick="loadGraph()" class="text-xs text-indigo-400 hover:underline"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</button>
+    </div>
+    <div class="flex flex-wrap gap-4 text-xs text-slate-400">
+        <span><span class="inline-block w-3 h-3 rounded-full bg-indigo-500 mr-1"></span>Document</span>
+        <span><span class="inline-block w-3 h-3 rounded-full bg-cyan-400 mr-1"></span>Skill</span>
+        <span><span class="inline-block w-6 h-0.5 bg-slate-600 mr-1 align-middle"></span>Shares Skill</span>
+        <span><span class="inline-block w-6 h-0.5 bg-amber-400 mr-1 align-middle"></span>Led To / Built On / Applied In</span>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden" style="height: 600px;">
+        <svg id="graphSvg" width="100%" height="100%"></svg>
+        <div id="graphTooltip" class="hidden absolute bg-slate-950 border border-indigo-700 rounded-xl px-4 py-3 text-xs max-w-xs pointer-events-none z-10 shadow-xl"></div>
+    </div>
+</section>
 
     <script src="app.js"></script>
 </body>

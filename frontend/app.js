@@ -22,6 +22,7 @@ function switchTab(tabName) {
     activeBtn.classList.remove('text-slate-300');
 
     if (tabName === 'timeline') loadTimeline();
+    if (tabName === 'graph') loadGraph();
 }
 
 async function handleFileUpload(event) {
@@ -179,4 +180,96 @@ async function handleResumeUpload(event) {
     } catch (err) {
         resultDiv.innerHTML = `<p class="text-rose-400 text-sm">Resume analysis failed.</p>`;
     }
+}
+function loadGraph() {
+    const svg = d3.select('#graphSvg');
+    svg.selectAll('*').remove();
+
+    const container = document.getElementById('graphSvg').parentElement;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    fetch(`${API_BASE}/graph`, { headers: { 'X-User-Id': USER_ID } })
+        .then(res => res.json())
+        .then(data => renderGraph(data, svg, width, height))
+        .catch(() => {
+            svg.append('text').attr('x', 20).attr('y', 40).attr('fill', '#f87171').text('Failed to load graph.');
+        });
+}
+
+function renderGraph(data, svg, width, height) {
+    if (!data.nodes || data.nodes.length === 0) {
+        svg.append('text').attr('x', 20).attr('y', 40).attr('fill', '#94a3b8').text('No graph data yet. Upload some documents first!');
+        return;
+    }
+
+    const nodes = data.nodes.map(n => ({ ...n }));
+    const links = data.links.map(l => ({ ...l }));
+    const causalTypes = ['LED_TO', 'BUILT_ON', 'APPLIED_IN'];
+
+    const g = svg.attr('viewBox', [0, 0, width, height])
+        .call(d3.zoom().scaleExtent([0.3, 3]).on('zoom', (e) => g.attr('transform', e.transform)))
+        .append('g');
+
+    const linkSel = g.append('g').selectAll('line').data(links).join('line')
+        .attr('stroke', d => causalTypes.includes(d.relationship) ? '#fbbf24' : '#475569')
+        .attr('stroke-width', d => causalTypes.includes(d.relationship) ? 2.5 : 1)
+        .attr('stroke-dasharray', d => d.relationship === 'USES_SKILL' ? '4,3' : null)
+        .attr('opacity', 0.7);
+
+    const nodeSel = g.append('g').selectAll('circle').data(nodes).join('circle')
+        .attr('r', d => d.type === 'Skill' ? 8 : 14)
+        .attr('fill', d => d.type === 'Skill' ? '#22d3ee' : '#6366f1')
+        .attr('stroke', '#0f172a')
+        .attr('stroke-width', 2)
+        .on('mouseover', showTooltip)
+        .on('mousemove', moveTooltip)
+        .on('mouseout', hideTooltip);
+
+    const labelSel = g.append('g').selectAll('text').data(nodes).join('text')
+        .text(d => d.label)
+        .attr('font-size', 10)
+        .attr('fill', '#cbd5e1')
+        .attr('dx', 16)
+        .attr('dy', 4)
+        .style('pointer-events', 'none');
+
+    const simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(90).strength(0.4))
+        .force('charge', d3.forceManyBody().strength(-220))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collide', d3.forceCollide(24))
+        .on('tick', () => {
+            linkSel.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                   .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+            nodeSel.attr('cx', d => d.x).attr('cy', d => d.y);
+            labelSel.attr('x', d => d.x).attr('y', d => d.y);
+        });
+
+    nodeSel.call(dragBehavior(simulation));
+}
+
+function dragBehavior(simulation) {
+    return d3.drag()
+        .on('start', (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on('end', (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; });
+}
+
+function showTooltip(event, d) {
+    const tip = document.getElementById('graphTooltip');
+    tip.classList.remove('hidden');
+    tip.innerHTML = d.type === 'Skill'
+        ? `<strong class="text-cyan-400">${d.label}</strong><br><span class="text-slate-400">Skill node</span>`
+        : `<strong class="text-indigo-400">${d.label}</strong><br><span class="text-slate-400">${d.type || ''} · ${d.date || ''}</span><br><span class="text-slate-300">${d.summary || ''}</span>`;
+    moveTooltip(event);
+}
+function moveTooltip(event) {
+    const tip = document.getElementById('graphTooltip');
+    const rect = document.getElementById('graphSvg').parentElement.getBoundingClientRect();
+    tip.style.left = (event.clientX - rect.left + 15) + 'px';
+    tip.style.top = (event.clientY - rect.top + 15) + 'px';
+}
+function hideTooltip() {
+    document.getElementById('graphTooltip').classList.add('hidden');
 }
