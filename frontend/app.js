@@ -211,11 +211,26 @@ function renderGraph(data, svg, width, height) {
         .call(d3.zoom().scaleExtent([0.3, 3]).on('zoom', (e) => g.attr('transform', e.transform)))
         .append('g');
 
+    // 1. Add Arrow Marker Definitions
+    svg.append('defs').append('marker')
+        .attr('id', 'arrow-causal')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 22)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#fbbf24')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+    // 2. Render Relationship Links with Arrowhead End Markers
     const linkSel = g.append('g').selectAll('line').data(links).join('line')
         .attr('stroke', d => causalTypes.includes(d.relationship) ? '#fbbf24' : '#475569')
         .attr('stroke-width', d => causalTypes.includes(d.relationship) ? 2.5 : 1)
         .attr('stroke-dasharray', d => d.relationship === 'USES_SKILL' ? '4,3' : null)
-        .attr('opacity', 0.7);
+        .attr('marker-end', d => causalTypes.includes(d.relationship) ? 'url(#arrow-causal)' : null)
+        .attr('opacity', 0.85);
 
     const nodeSel = g.append('g').selectAll('circle').data(nodes).join('circle')
         .attr('r', d => d.type === 'Skill' ? 8 : 14)
