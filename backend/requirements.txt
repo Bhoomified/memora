@@ -2,8 +2,8 @@ fastapi
 uvicorn
 pydantic
 pdfplumber
+pillow
 pytesseract
-sentence-transformers
 chromadb
 networkx
 httpx

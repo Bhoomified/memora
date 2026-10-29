@@ -1,14 +1,13 @@
 import os
 import re
 import chromadb
-from chromadb.utils import embedding_functions
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CHROMA_DATA_DIR = os.path.join(BASE_DIR, "data", "chroma_db")
 
-embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
-)
+# Same all-MiniLM-L6-v2 model as before, but via ONNX (no PyTorch needed)
+embedding_fn = DefaultEmbeddingFunction()
 
 client = chromadb.PersistentClient(path=CHROMA_DATA_DIR)
 
