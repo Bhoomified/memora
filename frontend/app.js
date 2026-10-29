@@ -1,4 +1,10 @@
 // --- Global Declarations (Declared ONCE) ---
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+
 function getUserId() {
     let uid = localStorage.getItem('memora_user_id');
     if (!uid) {
@@ -7,6 +13,7 @@ function getUserId() {
     }
     return uid;
 }
+
 const USER_ID = getUserId();
 const API_BASE = "/api";
 
@@ -41,15 +48,16 @@ async function handleFileUpload(event) {
     formData.append('file', file);
 
     try {
-        const res = await fetch(`${API_BASE}/upload`, { 
-            method: 'POST', 
-            headers: { 'X-User-Id': USER_ID }, 
-            body: formData 
+        const res = await fetch(`${API_BASE}/upload`, {
+            method: 'POST',
+            headers: { 'X-User-Id': USER_ID },
+            body: formData
         });
+
         const data = await res.json();
 
         if (data.success) {
-            statusDiv.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1.5"></i>Successfully indexed ${file.name}! Metadata mapped into Knowledge Graph.</span>`;
+            statusDiv.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1.5"></i>Successfully indexed ${esc(file.name)}! Metadata mapped into Knowledge Graph.</span>`;
             displayMetadataCard(data.metadata);
         } else {
             statusDiv.innerHTML = `<span class="text-rose-400">Upload processing failed.</span>`;
@@ -64,18 +72,18 @@ function displayMetadataCard(meta) {
     const cardsDiv = document.getElementById('metadataCards');
     resultDiv.classList.remove('hidden');
 
-    const skills = meta.extracted_skills && meta.extracted_skills.length > 0 
-        ? meta.extracted_skills.map(s => `<span class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded text-xs">${s}</span>`).join(' ') 
+    const skills = meta.extracted_skills && meta.extracted_skills.length > 0
+        ? meta.extracted_skills.map(s => `<span class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded text-xs">${esc(s)}</span>`).join(' ')
         : '<span class="text-slate-500">None detected</span>';
 
     cardsDiv.innerHTML = `
         <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-            <span class="text-xs uppercase font-extrabold text-indigo-400 tracking-wider">${meta.category}</span>
-            <h4 class="font-bold text-base mt-1 text-slate-100">${meta.title}</h4>
-            <p class="text-xs text-slate-400 mt-2 leading-relaxed">${meta.summary}</p>
+            <span class="text-xs uppercase font-extrabold text-indigo-400 tracking-wider">${esc(meta.category)}</span>
+            <h4 class="font-bold text-base mt-1 text-slate-100">${esc(meta.title)}</h4>
+            <p class="text-xs text-slate-400 mt-2 leading-relaxed">${esc(meta.summary)}</p>
         </div>
         <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="text-xs"><strong class="text-slate-400">Date:</strong> ${meta.date}</div>
+            <div class="text-xs"><strong class="text-slate-400">Date:</strong> ${esc(meta.date)}</div>
             <div class="text-xs"><strong class="text-slate-400">Extracted Skills:</strong> <div class="mt-1 flex flex-wrap gap-1">${skills}</div></div>
         </div>
     `;
@@ -94,13 +102,21 @@ function loadGraph() {
         .then(res => res.json())
         .then(data => renderGraph(data, svg, width, height))
         .catch(() => {
-            svg.append('text').attr('x', 20).attr('y', 40).attr('fill', '#f87171').text('Failed to load graph.');
+            svg.append('text')
+                .attr('x', 20)
+                .attr('y', 40)
+                .attr('fill', '#f87171')
+                .text('Failed to load graph.');
         });
 }
 
 function renderGraph(data, svg, width, height) {
     if (!data.nodes || data.nodes.length === 0) {
-        svg.append('text').attr('x', 20).attr('y', 40).attr('fill', '#94a3b8').text('No graph data yet. Upload some documents first!');
+        svg.append('text')
+            .attr('x', 20)
+            .attr('y', 40)
+            .attr('fill', '#94a3b8')
+            .text('No graph data yet. Upload some documents first!');
         return;
     }
 
@@ -116,10 +132,14 @@ function renderGraph(data, svg, width, height) {
     svg.append('defs').append('marker')
         .attr('id', 'arrow-causal')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 22).attr('refY', 0)
-        .attr('markerWidth', 6).attr('markerHeight', 6)
+        .attr('refX', 22)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
         .attr('orient', 'auto')
-        .append('path').attr('fill', '#fbbf24').attr('d', 'M0,-5L10,0L0,5');
+        .append('path')
+        .attr('fill', '#fbbf24')
+        .attr('d', 'M0,-5L10,0L0,5');
 
     const linkSel = g.append('g').selectAll('line').data(links).join('line')
         .attr('stroke', d => causalTypes.includes(d.relationship) ? '#fbbf24' : '#475569')
@@ -151,8 +171,12 @@ function renderGraph(data, svg, width, height) {
         .force('center', d3.forceCenter(width / 2, height / 2))
         .force('collide', d3.forceCollide(24))
         .on('tick', () => {
-            linkSel.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-                   .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+            linkSel
+                .attr('x1', d => d.source.x)
+                .attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x)
+                .attr('y2', d => d.target.y);
+
             nodeSel.attr('cx', d => d.x).attr('cy', d => d.y);
             labelSel.attr('x', d => d.x).attr('y', d => d.y);
         });
@@ -162,23 +186,37 @@ function renderGraph(data, svg, width, height) {
 
 function dragBehavior(simulation) {
     return d3.drag()
-        .on('start', (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
-        .on('end', (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; });
+        .on('start', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        })
+        .on('drag', (event, d) => {
+            d.fx = event.x;
+            d.fy = event.y;
+        })
+        .on('end', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        });
 }
 
 function showTooltip(event, d) {
     const tip = document.getElementById('graphTooltip');
     tip.classList.remove('hidden');
+
     tip.innerHTML = d.type === 'Skill'
-        ? `<strong class="text-cyan-400">${d.label}</strong><br><span class="text-slate-400">Skill node</span>`
-        : `<strong class="text-indigo-400">${d.label}</strong><br><span class="text-slate-400">${d.type || ''} · ${d.date || ''}</span><br><span class="text-slate-300">${d.summary || ''}</span>`;
+        ? `<strong class="text-cyan-400">${esc(d.label)}</strong><br><span class="text-slate-400">Skill node</span>`
+        : `<strong class="text-indigo-400">${esc(d.label)}</strong><br><span class="text-slate-400">${esc(d.type || '')} · ${esc(d.date || '')}</span><br><span class="text-slate-300">${esc(d.summary || '')}</span>`;
+
     moveTooltip(event);
 }
 
 function moveTooltip(event) {
     const tip = document.getElementById('graphTooltip');
     const rect = document.getElementById('graphSvg').parentElement.getBoundingClientRect();
+
     tip.style.left = (event.clientX - rect.left + 15) + 'px';
     tip.style.top = (event.clientY - rect.top + 15) + 'px';
 }
@@ -194,11 +232,13 @@ async function sendChatMessage() {
     if (!query) return;
 
     const chatBox = document.getElementById('chatBox');
-    chatBox.innerHTML += `<div class="flex justify-end"><div class="bg-indigo-600 text-white rounded-xl px-4 py-2.5 max-w-md text-sm">${query}</div></div>`;
+
+    chatBox.innerHTML += `<div class="flex justify-end"><div class="bg-indigo-600 text-white rounded-xl px-4 py-2.5 max-w-md text-sm">${esc(query)}</div></div>`;
     inputEl.value = '';
     chatBox.scrollTop = chatBox.scrollHeight;
 
     const loadingId = `load_${Date.now()}`;
+
     chatBox.innerHTML += `<div id="${loadingId}" class="flex justify-start"><div class="bg-slate-950 border border-slate-800 text-slate-400 rounded-xl p-3 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Synthesizing from digital records...</div></div>`;
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -208,10 +248,11 @@ async function sendChatMessage() {
             headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
             body: JSON.stringify({ query })
         });
+
         const data = await res.json();
         document.getElementById(loadingId).remove();
 
-        chatBox.innerHTML += `<div class="flex justify-start"><div class="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl p-4 max-w-xl text-sm leading-relaxed">${data.answer}</div></div>`;
+        chatBox.innerHTML += `<div class="flex justify-start"><div class="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl p-4 max-w-xl text-sm leading-relaxed">${esc(data.answer)}</div></div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
     } catch (err) {
         document.getElementById(loadingId).remove();
@@ -226,7 +267,8 @@ async function runGapAnalysis() {
 
     const resultDiv = document.getElementById('gapResult');
     resultDiv.classList.remove('hidden');
-    resultDiv.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Comparing Knowledge Graph against ${roleInput} requirements...</p>`;
+
+    resultDiv.innerHTML = `<p class="text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Comparing Knowledge Graph against ${esc(roleInput)} requirements...</p>`;
 
     try {
         const res = await fetch(`${API_BASE}/career/gap-analysis`, {
@@ -234,13 +276,19 @@ async function runGapAnalysis() {
             headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
             body: JSON.stringify({ target_role: roleInput })
         });
+
         const data = await res.json();
 
-        const missing = (data.missing_skills || []).map(s => `<span class="bg-rose-950/80 text-rose-300 border border-rose-800 px-2.5 py-1 rounded-md text-xs font-semibold">${s}</span>`).join(' ');
-        const recs = (data.recommendations || []).map(r => `<li class="text-xs text-slate-300">• ${r}</li>`).join('');
+        const missing = (data.missing_skills || [])
+            .map(s => `<span class="bg-rose-950/80 text-rose-300 border border-rose-800 px-2.5 py-1 rounded-md text-xs font-semibold">${esc(s)}</span>`)
+            .join(' ');
+
+        const recs = (data.recommendations || [])
+            .map(r => `<li class="text-xs text-slate-300">• ${esc(r)}</li>`)
+            .join('');
 
         resultDiv.innerHTML = `
-            <h3 class="font-bold text-base text-slate-100 mb-3">Gap Analysis for: <span class="text-indigo-400">${roleInput}</span></h3>
+            <h3 class="font-bold text-base text-slate-100 mb-3">Gap Analysis for: <span class="text-indigo-400">${esc(roleInput)}</span></h3>
             <div class="space-y-4">
                 <div>
                     <strong class="text-xs text-slate-400 uppercase tracking-wider">Identified Missing Skills:</strong>
@@ -266,14 +314,20 @@ async function loadTimeline() {
         .then(r => r.json())
         .then(d => {
             const storyDiv = document.getElementById('growthStory');
-            if (storyDiv) storyDiv.innerHTML = `<p class="text-sm text-slate-300 leading-relaxed">${d.story}</p>`;
+            if (storyDiv) {
+                storyDiv.innerHTML = `<p class="text-sm text-slate-300 leading-relaxed">${esc(d.story)}</p>`;
+            }
         });
 
     try {
-        const res = await fetch(`${API_BASE}/timeline`, { headers: { 'X-User-Id': USER_ID } });
+        const res = await fetch(`${API_BASE}/timeline`, {
+            headers: { 'X-User-Id': USER_ID }
+        });
+
         const data = await res.json();
 
         container.innerHTML = '';
+
         if (!data.timeline || data.timeline.length === 0) {
             container.innerHTML = `<p class="text-slate-400 text-sm">No items in digital timeline yet. Upload some files first!</p>`;
             return;
@@ -284,9 +338,9 @@ async function loadTimeline() {
                 <div class="relative">
                     <div class="absolute -left-[31px] top-1.5 bg-indigo-500 w-3 h-3 rounded-full ring-4 ring-slate-950"></div>
                     <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                        <span class="text-xs font-bold text-indigo-400">${item.date || 'Undated'}</span>
-                        <h4 class="font-bold text-base text-slate-100 mt-0.5">${item.label}</h4>
-                        <p class="text-xs text-slate-400 mt-1">${item.summary || ''}</p>
+                        <span class="text-xs font-bold text-indigo-400">${esc(item.date || 'Undated')}</span>
+                        <h4 class="font-bold text-base text-slate-100 mt-0.5">${esc(item.label)}</h4>
+                        <p class="text-xs text-slate-400 mt-1">${esc(item.summary || '')}</p>
                     </div>
                 </div>
             `;
@@ -309,24 +363,27 @@ async function handleResumeUpload(event) {
     formData.append('file', file);
 
     try {
-        const res = await fetch(`${API_BASE}/resume/evaluate`, { 
-            method: 'POST', 
+        const res = await fetch(`${API_BASE}/resume/evaluate`, {
+            method: 'POST',
             headers: { 'X-User-Id': USER_ID },
-            body: formData 
+            body: formData
         });
+
         const data = await res.json();
         const evalData = data.evaluation;
 
-        const feedbackList = evalData.feedback.map(f => `<li class="text-xs text-slate-300">• ${f}</li>`).join('');
+        const feedbackList = evalData.feedback
+            .map(f => `<li class="text-xs text-slate-300">• ${esc(f)}</li>`)
+            .join('');
 
         resultDiv.innerHTML = `
             <div class="flex items-center justify-between pb-6 border-b border-slate-800">
                 <div>
-                    <h3 class="text-lg font-bold">${data.filename}</h3>
+                    <h3 class="text-lg font-bold">${esc(data.filename)}</h3>
                     <p class="text-xs text-slate-400">Automated System Score</p>
                 </div>
                 <div class="text-4xl font-extrabold text-amber-400 bg-amber-950/50 border border-amber-800 px-4 py-2 rounded-2xl">
-                    ${evalData.score}<span class="text-sm text-amber-500 font-normal">/100</span>
+                    ${esc(evalData.score)}<span class="text-sm text-amber-500 font-normal">/100</span>
                 </div>
             </div>
             <div class="mt-6 space-y-4">
@@ -344,10 +401,11 @@ async function resetSession() {
     if (!confirm("Are you sure you want to clear your uploaded data and reset your session?")) return;
 
     try {
-        const res = await fetch(`${API_BASE}/reset`, { 
-            method: 'DELETE', 
-            headers: { 'X-User-Id': USER_ID } 
+        const res = await fetch(`${API_BASE}/reset`, {
+            method: 'DELETE',
+            headers: { 'X-User-Id': USER_ID }
         });
+
         const data = await res.json();
         alert(data.message);
         location.reload();

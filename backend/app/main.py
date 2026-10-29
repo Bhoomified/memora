@@ -2,7 +2,8 @@ import os
 import uuid
 import shutil
 from dotenv import load_dotenv
-
+import re
+from backend.app.rules import is_chronological
 # Load environment variables from backend/.env
 load_dotenv()
 
@@ -12,7 +13,7 @@ from pydantic import BaseModel
 
 from backend.app.ingestion import extract_text_from_file
 from backend.app.llm_engine import classify_document, infer_relationship, generate_growth_story, chat_with_context, analyze_skill_gap
-from backend.app.vector_store import add_document_to_vector_db, query_vector_db, client as chroma_client
+from backend.app.vector_store import add_document_to_vector_db, query_vector_db, delete_user_collection
 from backend.app.graph_engine import MemoryGraph, GRAPH_DIR
 from backend.app.resume_eval import evaluate_resume
 
@@ -46,10 +47,13 @@ def get_graph(user_id: str) -> MemoryGraph:
         graph_instances[user_id] = MemoryGraph(user_id=user_id)
     return graph_instances[user_id]
 
+_USER_ID_RE = re.compile(r"^user_[a-f0-9]{16}$")
+
 def get_user_id(x_user_id: str = Header(..., alias="X-User-Id")) -> str:
-    if not x_user_id or not x_user_id.strip():
-        raise HTTPException(status_code=400, detail="Missing X-User-Id header")
-    return x_user_id.strip()
+    uid = x_user_id.strip()
+    if not _USER_ID_RE.fullmatch(uid):
+        raise HTTPException(status_code=400, detail="Invalid X-User-Id")
+    return uid
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "uploads")
@@ -73,20 +77,33 @@ def health_check():
 async def upload_document(file: UploadFile = File(...), user_id: str = Depends(get_user_id)):
     try:
         contents = await file.read()
+
+        # Safety check 1: file size limit (10 MB)
+        if len(contents) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+
+        # Safety check 2: only allow PDF and image files
+        original_name = file.filename or "file"
+        if not original_name.lower().endswith((".pdf", ".png", ".jpg", ".jpeg")):
+            raise HTTPException(status_code=400, detail="Only PDF, PNG, JPG files are supported")
+
         doc_id = f"doc_{uuid.uuid4().hex[:8]}"
+
+        # Clean the filename: keep only letters, numbers, dot, dash, underscore
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(original_name))
 
         user_upload_dir = os.path.join(UPLOAD_DIR, user_id)
         os.makedirs(user_upload_dir, exist_ok=True)
-        file_path = os.path.join(user_upload_dir, f"{doc_id}_{file.filename}")
+        file_path = os.path.join(user_upload_dir, f"{doc_id}_{safe_name}")
         with open(file_path, "wb") as f:
             f.write(contents)
 
-        extracted_text = extract_text_from_file(contents, file.filename)
+        extracted_text = extract_text_from_file(contents, original_name)
         if not extracted_text:
-            extracted_text = f"Document title: {file.filename}"
+            extracted_text = f"Document title: {original_name}"
 
         metadata = await classify_document(extracted_text)
-        metadata["filename"] = file.filename
+        metadata["filename"] = original_name
         metadata["file_path"] = file_path
 
         add_document_to_vector_db(doc_id, extracted_text, metadata, user_id)
@@ -94,23 +111,33 @@ async def upload_document(file: UploadFile = File(...), user_id: str = Depends(g
         graph = get_graph(user_id)
         related_doc_ids = graph.add_document_node(doc_id, metadata)
 
+        # Check for related documents and establish causal relationships
         for other_id in related_doc_ids[:4]:
             other_doc = graph.get_document(other_id)
-            if other_doc:
-                relation = await infer_relationship(metadata, other_doc)
-                if relation != "NONE":
-                    graph.add_causal_edge(other_id, doc_id, relation)
+            if not other_doc:
+                continue
+            # Orient the pair by date. Skip if either date is unknown.
+            if is_chronological(other_doc.get("date"), metadata.get("date")):
+                earlier_id, earlier, later_id, later = other_id, other_doc, doc_id, metadata
+            elif is_chronological(metadata.get("date"), other_doc.get("date")):
+                earlier_id, earlier, later_id, later = doc_id, metadata, other_id, other_doc
+            else:
+                continue
+            result = await infer_relationship(later, earlier)
+            if result["relation"] != "NONE":
+                graph.add_causal_edge(earlier_id, later_id, result["relation"], result["reason"])
 
         return {
             "success": True,
             "doc_id": doc_id,
-            "filename": file.filename,
+            "filename": original_name,
             "metadata": metadata
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
-
-
+    
 @app.post("/api/chat")
 async def chat_identity_assistant(payload: ChatQuery, user_id: str = Depends(get_user_id)):
     retrieved_docs = query_vector_db(payload.query, user_id, top_k=4)
@@ -168,11 +195,7 @@ def reset_user_session(user_id: str = Depends(get_user_id)):
         if user_id in graph_instances:
             del graph_instances[user_id]
 
-        collection_name = f"memora_{user_id[:50]}"
-        try:
-            chroma_client.delete_collection(name=collection_name)
-        except Exception:
-            pass
+        delete_user_collection(user_id)
 
         return {"success": True, "message": "User session data reset successfully."}
     except Exception as e:
@@ -190,3 +213,10 @@ async def evaluate_resume_endpoint(file: UploadFile = File(...), user_id: str = 
 
 # MUST BE THE LAST LINE: Serve frontend static files from root URL
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+class SearchQuery(BaseModel):
+    query: str
+
+@app.post("/api/search")
+def semantic_search(payload: SearchQuery, user_id: str = Depends(get_user_id)):
+    return {"results": query_vector_db(payload.query, user_id, top_k=5)}
