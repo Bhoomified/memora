@@ -56,3 +56,11 @@ def query_vector_db(query: str, user_id: str, top_k: int = 3) -> list:
                 "distance": results["distances"][0][i] if "distances" in results else 0
             })
     return formatted_results
+
+def delete_user_collection(user_id: str):
+    name = _safe_collection_name(user_id)
+    _collection_cache.pop(name, None)
+    try:
+        client.delete_collection(name=name)
+    except Exception:
+        pass

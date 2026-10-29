@@ -112,3 +112,7 @@ class MemoryGraph:
             except Exception as e:
                 print(f"Graph loading warning: {e}")
                 self.graph = nx.DiGraph()
+                
+def add_causal_edge(self, source_id: str, target_id: str, relation: str, reason: str = ""):
+    self.graph.add_edge(source_id, target_id, relationship=relation, reason=reason, origin="llm")
+    self.save_graph()

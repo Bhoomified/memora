@@ -1,9 +1,15 @@
+from curses import raw
 import os
 import json
 import httpx
+import asyncio
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.1-8b-instant"  # fast + free-tier friendly
+
+from backend.app.skills import normalize_skills
+from backend.app.rules import CATEGORIES, parse_date, fallback_year
+
 
 def _get_api_key() -> str:
     key = os.environ.get("GROQ_API_KEY")
@@ -11,18 +17,25 @@ def _get_api_key() -> str:
         raise RuntimeError("GROQ_API_KEY environment variable is not set.")
     return key
 
-async def call_llm(prompt: str) -> str:
-    """Generic call to Groq's OpenAI-compatible chat completions endpoint."""
+async def call_llm(prompt: str, json_mode: bool = False, retries: int = 3) -> str:
     headers = {"Authorization": f"Bearer {_get_api_key()}", "Content-Type": "application/json"}
     body = {
-        "model": GROQ_MODEL,
+        "model": os.environ.get("GROQ_MODEL", GROQ_MODEL),
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
+        "temperature": 0.2,
     }
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(GROQ_URL, headers=headers, json=body)
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
+        for attempt in range(retries):
+            resp = await client.post(GROQ_URL, headers=headers, json=body)
+            if resp.status_code == 429 or resp.status_code >= 500:
+                await asyncio.sleep(2 ** attempt)   # wait 1s, 2s, 4s, then retry
+                continue
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+    raise RuntimeError("LLM unavailable after retries")
 
 
 SYSTEM_PROMPT = """
@@ -54,9 +67,9 @@ async def classify_document(text: str) -> dict:
         }
     prompt = f"{SYSTEM_PROMPT}\n\nDocument Text Content:\n{text[:2500]}"
     try:
-        raw = await call_llm(prompt)
-        clean = raw.replace("```json", "").replace("```", "").strip()
-        return json.loads(clean)
+        raw = await call_llm(prompt, json_mode=True)
+        meta = json.loads(raw)
+        return validate_metadata(meta, text)
     except Exception as e:
         print(f"LLM Classification Warning/Error: {str(e)}")
         return {
@@ -66,37 +79,32 @@ async def classify_document(text: str) -> dict:
 
 
 RELATIONSHIP_PROMPT = """
-You are analyzing two entries in someone's personal knowledge graph to detect a causal or developmental relationship between them.
+Two entries from someone's personal knowledge graph.
 
 Entry A (earlier): "{a_title}" ({a_type}) - {a_summary}
-Entry B (newer): "{b_title}" ({b_type}) - {b_summary}
+Entry B (later): "{b_title}" ({b_type}) - {b_summary}
 
-Does Entry A meaningfully connect to Entry B? Answer with ONLY one word from this list:
-LED_TO
-BUILT_ON
-APPLIED_IN
-NONE
-
-Answer with exactly one word, nothing else.
+Does Entry A meaningfully lead to, or get built upon in, Entry B?
+Return ONLY JSON: {{"relation": "LED_TO" | "BUILT_ON" | "APPLIED_IN" | "NONE", "reason": "<one short sentence citing a shared skill or topic>"}}
+If there is no clear, specific connection, use NONE.
 """
 
-async def infer_relationship(new_doc: dict, existing_doc: dict) -> str:
+async def infer_relationship(later: dict, earlier: dict) -> dict:
     prompt = RELATIONSHIP_PROMPT.format(
-        a_title=existing_doc.get("title", ""), a_type=existing_doc.get("type", ""),
-        a_summary=existing_doc.get("summary", ""),
-        b_title=new_doc.get("title", ""), b_type=new_doc.get("category", ""),
-        b_summary=new_doc.get("summary", "")
+        a_title=earlier.get("title", ""), a_type=earlier.get("type") or earlier.get("category", ""),
+        a_summary=earlier.get("summary", ""),
+        b_title=later.get("title", ""), b_type=later.get("type") or later.get("category", ""),
+        b_summary=later.get("summary", ""),
     )
     try:
-        raw = (await call_llm(prompt)).strip().upper()
-        for valid in ["LED_TO", "BUILT_ON", "APPLIED_IN", "NONE"]:
-            if valid in raw:
-                return valid
-        return "NONE"
+        data = json.loads(await call_llm(prompt, json_mode=True))
+        relation = str(data.get("relation", "NONE")).upper()
+        if relation not in {"LED_TO", "BUILT_ON", "APPLIED_IN"}:
+            return {"relation": "NONE", "reason": ""}
+        return {"relation": relation, "reason": str(data.get("reason", ""))[:200]}
     except Exception as e:
         print(f"Relationship inference warning: {e}")
-        return "NONE"
-
+        return {"relation": "NONE", "reason": ""}
 
 STORY_PROMPT = """
 You are Memora, an AI that writes short, warm, first-person-style growth narratives from a timeline of someone's documents.
@@ -141,31 +149,66 @@ Instructions:
     except Exception:
         return "Could not synthesize response right now."
 
+import difflib
+from backend.app.skills import normalize_skills
 
+ROLE_SKILLS = {
+    "machine learning engineer": ["Python", "Machine Learning", "Deep Learning", "PyTorch", "TensorFlow", "scikit-learn", "SQL", "Docker", "Git"],
+    "data scientist": ["Python", "SQL", "Machine Learning", "scikit-learn", "Pandas", "Statistics", "Data Visualization", "Git"],
+    "full stack developer": ["JavaScript", "TypeScript", "React", "Node.js", "SQL", "REST APIs", "Docker", "Git"],
+    "backend developer": ["Python", "FastAPI", "SQL", "PostgreSQL", "REST APIs", "Docker", "Git", "AWS"],
+    "devops engineer": ["Docker", "Kubernetes", "AWS", "CI/CD", "Linux", "Git", "Terraform"],
+    "data analyst": ["SQL", "Excel", "Python", "Pandas", "Data Visualization", "Statistics"],
+}
 async def analyze_skill_gap(target_role: str, user_skills: list) -> dict:
-    prompt = f"""
-You are an expert career advisor. Analyze the user's skills against their target role.
+    mine = normalize_skills(user_skills)
+    mine_lower = {s.lower() for s in mine}
 
-Target Role: {target_role}
-User's Extracted Skills: {user_skills if user_skills else "No skills logged yet."}
+    match = difflib.get_close_matches(target_role.strip().lower(), ROLE_SKILLS.keys(), n=1, cutoff=0.5)
+    if match:
+        needed, basis, role_used = ROLE_SKILLS[match[0]], "curated", match[0]
+    else:
+        # Unknown role: ask the LLM for requirements, and label it honestly
+        try:
+            data = json.loads(await call_llm(
+                f'List 8 core technical skills for the role "{target_role}". '
+                f'Return ONLY JSON: {{"skills": ["..."]}}', json_mode=True))
+            needed = normalize_skills(data.get("skills"))[:8]
+        except Exception:
+            needed = []
+        basis, role_used = "ai_estimated", target_role
 
-Tasks:
-1. Identify 3 key technical skills required for '{target_role}' that are MISSING from user's skills.
-2. Provide 2 actionable recommendations to bridge the gap.
+    have = [s for s in needed if s.lower() in mine_lower]
+    missing = [s for s in needed if s.lower() not in mine_lower]
+    coverage = round(100 * len(have) / len(needed)) if needed else 0
 
-Return STRICT JSON format:
-{{
-  "missing_skills": ["MissingSkill1", "MissingSkill2", "MissingSkill3"],
-  "recommendations": ["Action item 1", "Action item 2"]
-}}
-Respond ONLY with valid JSON.
-"""
-    try:
-        raw = await call_llm(prompt)
-        clean = raw.replace("```json", "").replace("```", "").strip()
-        return json.loads(clean)
-    except Exception:
-        return {
-            "missing_skills": ["System Architecture", "Production MLOps", "Distributed Computing"],
-            "recommendations": ["Build a deployed open-source project.", "Complete an advanced domain certification."]
-        }
+    recommendations = []
+    if missing:
+        try:
+            data = json.loads(await call_llm(
+                f"Someone targeting the role '{role_used}' is missing these skills: {missing}. "
+                f'Give 2 concrete, practical project or learning ideas. '
+                f'Return ONLY JSON: {{"recommendations": ["...", "..."]}}', json_mode=True))
+            recommendations = [str(r)[:200] for r in data.get("recommendations", [])][:2]
+        except Exception:
+            pass
+
+    return {
+        "role_matched": role_used, "basis": basis, "coverage_percent": coverage,
+        "have": have, "missing": missing, "recommendations": recommendations,
+    }
+def validate_metadata(meta: dict, text: str) -> dict:
+    category = meta.get("category")
+    if category not in CATEGORIES:
+        category = "Academics"
+    date = meta.get("date")
+    if parse_date(date) is None:
+        date = fallback_year(text)
+    return {
+        "title": str(meta.get("title") or "Untitled Document")[:120],
+        "category": category,
+        "date": date,
+        "extracted_skills": normalize_skills(meta.get("extracted_skills")),
+        "summary": str(meta.get("summary") or "")[:500],
+        "related_entities": [str(e)[:80] for e in (meta.get("related_entities") or [])][:10],
+    }
